@@ -74,6 +74,7 @@ class TiltBrushMesh(object):
     ('uv1','f', None),
     ('c',  'I', 1),
     ('t',  'f', 4),
+    #('tm', 'f', 1),
   ]
 
   @classmethod
@@ -142,6 +143,8 @@ class TiltBrushMesh(object):
     dest.t = []
     dest.tri = []
     for stroke in stroke_list:
+      attrs = vars(an)
+      print ', '.join("%s: %s" % item for item in attrs.items())
       offset = len(dest.v)
       dest.v.extend(stroke.v)
       dest.n.extend(stroke.n)
