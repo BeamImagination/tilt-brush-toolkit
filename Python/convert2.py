@@ -5,6 +5,7 @@ import json;
 import base64;
 from pprint import pprint;
 import struct;
+import sys;
 
 from tiltbrush_fbx import *;
 
@@ -44,8 +45,20 @@ def export(format):
     
     # since vertices are defined globally for .obj we have to keep track of the offset
     vert_offset = 0;
-
+    min_time = sys.maxint;
+    max_time = 0;
+    
     for strokenum, stroke in enumerate(json_data["strokes"]):
+        for cp in tilt_data.sketch.strokes[strokenum].controlpoints:
+            if max_time < cp.extension[1]:
+                print(str(max_time) + " < " + str(cp.extension[1]));
+                max_time = cp.extension[1];
+            
+            if min_time > cp.extension[1]:
+                print(str(min_time) + " > " + str(cp.extension[1]));
+                min_time = cp.extension[1];
+    
+    for strokenum, stroke in enumerate(json_data["strokes"]):    
         Model = None;
         if format == "obj":
             f.write("o stroke_" + str(strokenum) + '\n');
@@ -61,11 +74,14 @@ def export(format):
         color_data = base64.b64decode(stroke["c"]);
         tri_data = base64.b64decode(stroke["tri"]);
         nrm_data = base64.b64decode(stroke["n"]);
+        uv_data = base64.b64decode(stroke["uv0"]);
         
         color_list = [];
         vert_list = [];
         tri_list = [];
         nrm_list = [];
+        uv_list = [];
+        uv_list2 = [];
         
         # this starts at 1 for .obj
         tri_offsetted = [];
@@ -76,7 +92,7 @@ def export(format):
         
         # read in the binary data to vert_list
         for i in range(len(vert_data) // 12):
-            vert_list.append(struct.unpack('fff', vert_data[i*12:i*12 + 12]));
+            vert_list.append(map(lambda x: x * 10, struct.unpack('fff', vert_data[i*12:i*12 + 12])));
             
         # read in the binary data to tri_list
         for i in range(len(tri_data) // 12):
@@ -85,6 +101,19 @@ def export(format):
         # read in the binary data to vert_list
         for i in range(len(nrm_data) // 12):
             nrm_list.append(struct.unpack('fff', nrm_data[i*12:i*12 + 12]));
+        
+        # read in the binary data to uv_list
+        for i in range(len(uv_data) // 8):
+            uv_list.append(struct.unpack('ff', uv_data[i*8:i*8 + 8]));
+            cp_index = min(i // 2, len(tilt_data.sketch.strokes[strokenum].controlpoints) - 1);
+            if (i // 2) > cp_index:
+                print("error!!!!! i: " + str(i // 2) + " and cp_index:" + str(cp_index));
+                
+            uv_time = (tilt_data.sketch.strokes[strokenum].controlpoints[cp_index].extension[1] - min_time) / float(max_time - min_time);
+            uv_list2.append((uv_time, uv_list[i][1]));
+            uv_list2.append((uv_time, uv_list[i][1]));
+            uv_list2.append((uv_time, uv_list[i][1]));
+            print(uv_time);
 
         # vertex list
         if format == "obj":
@@ -116,7 +145,7 @@ def export(format):
             end_index = (len(tri_list) - 1);
             tri_str = "";
             for i, tri in enumerate(tri_list):
-                fbx_tri = (tri[0], tri[2], (tri[1] * (- 1)) - 1);
+                fbx_tri = (tri[0], tri[1], (tri[2] * (- 1)) - 1);
                 tri_str += "{0[0]},{0[1]},{0[2]}".format(fbx_tri);
                 if i < end_index:
                     tri_str += ','
@@ -141,13 +170,109 @@ def export(format):
             normal_node.addChild(FBXNode('Normals', normal_str));
             Model.addChild(normal_node);
             
+            
+        # fbx color
+        if format == "fbx":
+            color_node = FBXNode('LayerElementColor', '0');
+            color_node.addChild(FBXNode('Version', '101'));
+            color_node.addChild(FBXNode('Name', '\"\"'));
+            color_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
+            color_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            color_str = "";
+            for i, rgba in enumerate(color_list):
+                color_str += '{0[0]},{0[1]},{0[2]},{0[3]},'.format(rgba);
+                color_str += '{0[0]},{0[1]},{0[2]},{0[3]},'.format(rgba);
+                color_str += '{0[0]},{0[1]},{0[2]},{0[3]}'.format(rgba);
+                
+                end_index = (len(color_list) - 1);
+                if i < end_index:
+                    color_str += ',';
+            color_node.addChild(FBXNode('Colors', color_str));
+            Model.addChild(color_node);
+            
+        # fbx uv0
+        if format == "fbx":
+            uv_node = FBXNode('LayerElementUV', '0');
+            uv_node.addChild(FBXNode('Version', '101'));
+            uv_node.addChild(FBXNode('Name', '\"UVChannel_1\"'));
+            uv_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
+            uv_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            uv_str = "";
+            for i, uv in enumerate(uv_list):
+                uv_str += '{0[0]},{0[1]}'.format(uv);
+                
+                end_index = (len(uv_list) - 1);
+                if i < end_index:
+                    uv_str += ',';
+            uv_node.addChild(FBXNode('UV', uv_str));
+            Model.addChild(uv_node);
+            
+        # fbx uv1
+        if format == "fbx":
+            uv_node = FBXNode('LayerElementUV', '1');
+            uv_node.addChild(FBXNode('Version', '101'));
+            uv_node.addChild(FBXNode('Name', '\"UVChannel_2\"'));
+            uv_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
+            uv_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            uv_str = "";
+            for i, uv in enumerate(uv_list2):
+                uv_str += '{0[0]},{0[1]}'.format(uv);
+                
+                end_index = (len(uv_list2) - 1);
+                if i < end_index:
+                    uv_str += ',';
+            uv_node.addChild(FBXNode('UV', uv_str));
+            Model.addChild(uv_node);
+        
+        # smoothing and other crap
+        if format == "fbx":
+            smoothing_node = FBXNode('LayerElementSmoothing', '0');
+            smoothing_node.addChild(FBXNode('Version', '101'));
+            smoothing_node.addChild(FBXNode('Name', '\"\"'));
+            smoothing_node.addChild(FBXNode('MappingInformationType', '\"ByPolygon\"'));
+            smoothing_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            smooth_str = "";
+            end_index = (len(tri_list) - 1);
+            for i in range(len(tri_list)):
+                smooth_str += '1';
+                if i < end_index:
+                    smooth_str += ',';
+            smoothing_node.addChild(FBXNode('Smoothing', smooth_str));
+            Model.addChild(smoothing_node);
+        
             layer_node = FBXNode('Layer', '0');
             layer_node.addChild(FBXNode('Version', '100'));
-            layer_element = FBXNode('LayerElement');
-            layer_element.addChild(FBXNode('Type', '\"LayerElementNormal\"'));
-            layer_element.addChild(FBXNode('TypedIndex', '0'));
-            layer_node.addChild(layer_element);
+            
+            layer_nrm_element = FBXNode('LayerElement');
+            layer_nrm_element.addChild(FBXNode('Type', '\"LayerElementNormal\"'));
+            layer_nrm_element.addChild(FBXNode('TypedIndex', '0'));
+            layer_node.addChild(layer_nrm_element);
+            
+            layer_smoothing_element = FBXNode('LayerElement');
+            layer_smoothing_element.addChild(FBXNode('Type', '\"LayerElementSmoothing\"'));
+            layer_smoothing_element.addChild(FBXNode('TypedIndex', '0'));
+            layer_node.addChild(layer_smoothing_element);
+            
+            layer_color_element = FBXNode('LayerElement');
+            layer_color_element.addChild(FBXNode('Type', '\"LayerElementColor\"'));
+            layer_color_element.addChild(FBXNode('TypedIndex', '0'));
+            layer_node.addChild(layer_color_element);
+            
+            layer_uv_element = FBXNode('LayerElement');
+            layer_uv_element.addChild(FBXNode('Type', '\"LayerElementUV\"'));
+            layer_uv_element.addChild(FBXNode('TypedIndex', '0'));
+            layer_node.addChild(layer_uv_element);
+       
             Model.addChild(layer_node);
+            
+            layer_node2 = FBXNode('Layer', '1');
+            layer_node2.addChild(FBXNode('Version', '100'));
+            layer_uv_element = FBXNode('LayerElement');
+            layer_uv_element.addChild(FBXNode('Type', '\"LayerElementUV\"'));
+            layer_uv_element.addChild(FBXNode('TypedIndex', '1'));
+            layer_node2.addChild(layer_uv_element);
+            Model.addChild(layer_node2);
+            
         
         # for obj,the indicies of the verts in the next object are offsetted by the number
         # of verts in this object
@@ -165,7 +290,7 @@ def export(format):
         properties60.addChild(FBXNode('Property', '\"FrontAxisSign\", \"int\", \"\", 1'));
         properties60.addChild(FBXNode('Property', '\"CoordAxis\", \"int\", \"\", 0'));
         properties60.addChild(FBXNode('Property', '\"CoordAxisSign\", \"int\", \"\", 1'));
-        properties60.addChild(FBXNode('Property', '\"UnitScaleFactor\", \"double\", \"\", 1'));
+        properties60.addChild(FBXNode('Property', '\"UnitScaleFactor\", \"double\", \"\", 10'));
         global_settings.addChild(properties60);
         obj_node.addChild(global_settings);
     
@@ -204,7 +329,8 @@ def export(format):
             f.write('\n');
         
     f.close();
-
-
+    
+    print("max_time: " + str(max_time));
+    print("min_time: " + str(min_time));
 
 export("fbx");
