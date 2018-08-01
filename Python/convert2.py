@@ -48,17 +48,20 @@ def export(format):
     min_time = sys.maxint;
     max_time = 0;
     
+    mat_id = [];
     for strokenum, stroke in enumerate(json_data["strokes"]):
+        # create a list of the materials needed
+        if not tilt_data.sketch.strokes[strokenum].brush_idx in mat_id:
+            mat_id.append(tilt_data.sketch.strokes[strokenum].brush_idx);
+    
         for cp in tilt_data.sketch.strokes[strokenum].controlpoints:
             if max_time < cp.extension[1]:
-                print(str(max_time) + " < " + str(cp.extension[1]));
                 max_time = cp.extension[1];
             
             if min_time > cp.extension[1]:
-                print(str(min_time) + " > " + str(cp.extension[1]));
                 min_time = cp.extension[1];
     
-    for strokenum, stroke in enumerate(json_data["strokes"]):    
+    for strokenum, stroke in enumerate(json_data["strokes"]):
         Model = None;
         if format == "obj":
             f.write("o stroke_" + str(strokenum) + '\n');
@@ -81,6 +84,8 @@ def export(format):
         tri_list = [];
         nrm_list = [];
         uv_list = [];
+        
+        # this is the same as first uv list, except the X is mapped to normalized time
         uv_list2 = [];
         
         # this starts at 1 for .obj
@@ -113,7 +118,6 @@ def export(format):
             uv_list2.append((uv_time, uv_list[i][1]));
             uv_list2.append((uv_time, uv_list[i][1]));
             uv_list2.append((uv_time, uv_list[i][1]));
-            print(uv_time);
 
         # vertex list
         if format == "obj":
@@ -223,6 +227,24 @@ def export(format):
                     uv_str += ',';
             uv_node.addChild(FBXNode('UV', uv_str));
             Model.addChild(uv_node);
+            
+        # mat id
+        if format == "fbx":
+            mat_node = FBXNode('LayerElementMaterial', '0'); #str(tilt_data.sketch.strokes[strokenum].brush_idx));
+            mat_node.addChild(FBXNode('Version', '101'));
+            mat_node.addChild(FBXNode('Name', '\"\"'));
+            mat_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
+            mat_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            mat_str = "";
+            for i in range(len(vert_list)):
+                mat_str += str(tilt_data.sketch.strokes[strokenum].brush_idx);
+                
+                end_index = (len(vert_list) - 1);
+                if i < end_index:
+                    mat_str += ',';
+                
+            mat_node.addChild(FBXNode('Materials', mat_str));
+            Model.addChild(mat_node);
         
         # smoothing and other crap
         if format == "fbx":
@@ -262,6 +284,11 @@ def export(format):
             layer_uv_element.addChild(FBXNode('Type', '\"LayerElementUV\"'));
             layer_uv_element.addChild(FBXNode('TypedIndex', '0'));
             layer_node.addChild(layer_uv_element);
+            
+            layer_mat_element = FBXNode('LayerElement');
+            layer_mat_element.addChild(FBXNode('Type', '\"LayerElementMaterial\"'));
+            layer_mat_element.addChild(FBXNode('TypedIndex', '0'));
+            layer_node.addChild(layer_mat_element);
        
             Model.addChild(layer_node);
             
@@ -330,7 +357,7 @@ def export(format):
         
     f.close();
     
-    print("max_time: " + str(max_time));
-    print("min_time: " + str(min_time));
+    for k,v in enumerate(mat_id):
+        print(str(k) + ": " + str(v));
 
 export("fbx");
