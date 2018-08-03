@@ -9,7 +9,7 @@ import sys;
 
 from tiltbrush_fbx import *;
 
-sketch_name = "Untitled_2";
+sketch_name = "Untitled_4";
 
 json_data = json.loads(open(sketch_name + '.json').read());
 tilt_data = tilt.Tilt(sketch_name + '.tilt');
@@ -121,8 +121,15 @@ def export(format):
             nrm_list.append(struct.unpack('fff', nrm_data[i*12:i*12 + 12]));
         
         # read in the binary data to uv_list
-        for i in range(len(uv_data) // 8):
-            uv_list.append(struct.unpack('ff', uv_data[i*8:i*8 + 8]));
+        
+        uv_vert_ratio = (len(uv_data) // 4) // len(vert_list);
+        for i in range(len(uv_data) // (4 * uv_vert_ratio)):
+            if (uv_vert_ratio == 2):
+                uv_list.append(struct.unpack('ff', uv_data[i*8:i*8 + 8]));
+            elif (uv_vert_ratio == 3):
+                uv_list.append(struct.unpack('fff', uv_data[i*12:i*12 + 12]));
+            elif (uv_vert_ratio == 4):
+                uv_list.append(struct.unpack('ffff', uv_data[i*16:i*16 + 16]));
             cp_index = min(i // 2, len(tilt_data.sketch.strokes[strokenum].controlpoints) - 1);
             #if (i // 2) > cp_index:
                 #print("error!!!!! i: " + str(i // 2) + " and cp_index:" + str(cp_index));
@@ -131,6 +138,14 @@ def export(format):
             uv_list2.append((uv_time, uv_list[i][1]));
             uv_list2.append((uv_time, uv_list[i][1]));
             uv_list2.append((uv_time, uv_list[i][1]));
+
+        #if (len(uv_list) != len(vert_list)):
+        #   print("stroke num: " + str(strokenum));
+        #   print("uv_list len: " + str(len(uv_list)));
+        #   print("vert_list len: " + str(len(vert_list)));
+        #   ratio = (len(uv_list) * 2) // len(vert_list);
+        #   print("ratio: " + str(ratio));
+        #   print("\n");
 
         # vertex list
         if format == "obj":
@@ -176,8 +191,8 @@ def export(format):
             normal_node = FBXNode('LayerElementNormal', '0');
             normal_node.addChild(FBXNode('Version', '101'));
             normal_node.addChild(FBXNode('Name', '\"\"'));
-            normal_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
-            normal_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            normal_node.addChild(FBXNode('MappingInformationType', '\"ByPolygonVertex\"'));
+            normal_node.addChild(FBXNode('ReferenceInformationType', '\"IndexToDirect\"'));
             normal_str = "";
             end_index = (len(nrm_list) - 1);
             for i, xyz in enumerate(nrm_list):
@@ -185,6 +200,13 @@ def export(format):
                 if i < end_index:
                     normal_str += ',';
             normal_node.addChild(FBXNode('Normals', normal_str));
+            nrmindex_str = "";
+            for i, tri in enumerate(tri_list):
+                nrmindex_str += "{0[0]},{0[1]},{0[2]}".format(tri);
+                if i < (len(tri_list) - 1):
+                    nrmindex_str += ',';
+
+            normal_node.addChild(FBXNode('NormalsIndex', nrmindex_str));
             Model.addChild(normal_node);
             
             
@@ -212,16 +234,37 @@ def export(format):
             uv_node = FBXNode('LayerElementUV', '0');
             uv_node.addChild(FBXNode('Version', '101'));
             uv_node.addChild(FBXNode('Name', '\"UVChannel_1\"'));
-            uv_node.addChild(FBXNode('MappingInformationType', '\"ByVertex\"'));
-            uv_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
+            uv_node.addChild(FBXNode('MappingInformationType', '\"ByPolygonVertex\"'));
+            uv_node.addChild(FBXNode('ReferenceInformationType', '\"IndexToDirect\"'));
             uv_str = "";
+            if len(uv_list[0]) > 2:
+                print("stroke num: " + str(strokenum));
+
             for i, uv in enumerate(uv_list):
-                uv_str += '{0[0]},{0[1]}'.format(uv);
-                
+                uv_str += '{0[0]:.8}, {0[1]:.8}'.format(uv);
+                if (len(uv) == 3):
+                    print(str('({0[0]:.8}, {0[1]:.8}, {0[2]:.8})'.format(uv)));
+
+                if (len(uv) == 4):
+                    print(str('({0[0]:.8}, {0[1]:.8}, {0[2]:.8}, {0[3]:.8})'.format(uv)));
+
                 end_index = (len(uv_list) - 1);
                 if i < end_index:
-                    uv_str += ',';
+                    uv_str += ', ';
+
+            if len(uv_list[0]) > 2:
+                print("\n");
+
             uv_node.addChild(FBXNode('UV', uv_str));
+            
+            uvindex_str = "";
+            for i, tri in enumerate(tri_list):
+                uvindex_str += "{0[0]},{0[1]},{0[2]}".format(tri);
+                if i < (len(tri_list) - 1):
+                    uvindex_str += ',';
+
+            uv_node.addChild(FBXNode('UVIndex', uvindex_str));
+
             Model.addChild(uv_node);
             
         # fbx uv1
@@ -233,7 +276,7 @@ def export(format):
             uv_node.addChild(FBXNode('ReferenceInformationType', '\"Direct\"'));
             uv_str = "";
             for i, uv in enumerate(uv_list2):
-                uv_str += '{0[0]},{0[1]}'.format(uv);
+                uv_str += '{0[0]:.8},{0[1]:.8}'.format(uv);
                 
                 end_index = (len(uv_list2) - 1);
                 if i < end_index:
